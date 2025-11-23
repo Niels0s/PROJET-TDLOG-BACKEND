@@ -13,6 +13,12 @@ app = FastAPI(title="TD-LOG API", version="0.1.0")
 def root():
     return {"message": "Backend TDLOG running"}
 
+#petit test arthur sur la partie participant 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # en dev : on autorise tout, on durcira plus tard si besoin
