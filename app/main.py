@@ -8,6 +8,11 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="TD-LOG API", version="0.1.0")
 
+#Quand on lance le backend
+@app.get("/")
+def root():
+    return {"message": "Backend TDLOG running"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # en dev : on autorise tout, on durcira plus tard si besoin
