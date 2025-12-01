@@ -1,9 +1,11 @@
 # app/routers/students.py
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from .. import models, schemas
 from ..db import get_db
 import csv
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(
     prefix="/students",
@@ -35,37 +37,77 @@ async def import_students_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    """
-    CSV avec au moins les colonnes : nom, prenom, email
-    (adaptable selon ton fichier)
-    """
     content = await file.read()
-    lines = content.decode("utf-8").splitlines()
+    text = content.decode("utf-8")
+    lines = text.splitlines()
 
-    reader = csv.DictReader(lines, delimiter=";")  # ou "," selon ton fichier
+    reader = csv.DictReader(lines, delimiter=";")
 
     inserted = 0
-    for row in reader:
-        # adapte les noms de colonnes à ton CSV
-        first_name = row["prenom"].strip()
-        last_name = row["nom"].strip()
-        email = row["email"].strip()
+    skipped_duplicates = 0
 
-        # on ignore si déjà présent
-        existing = db.query(models.Student).filter(
-            models.Student.email == email
-        ).first()
-        if existing:
-            continue
+    for row in reader:
+        first_name = row["first_name"].strip()
+        last_name  = row["last_name"].strip()
+        email      = row["email"].strip()
+
+        is_external = not (
+            email.endswith("@eleves.enpc.fr")
+            or email.endswith("@enpc.fr")
+        )
 
         student = models.Student(
             first_name=first_name,
             last_name=last_name,
             email=email,
-            is_external=False,
+            is_external=is_external,
         )
-        db.add(student)
-        inserted += 1
 
-    db.commit()
-    return {"inserted": inserted}
+        db.add(student)
+        try:
+            db.commit()          # on essaie d’insérer
+            db.refresh(student)
+            inserted += 1
+        except IntegrityError:
+            db.rollback()        # doublon => on annule
+            skipped_duplicates += 1
+            continue
+
+    return {
+        "inserted": inserted,
+        "skipped_duplicates": skipped_duplicates,
+    }
+
+
+
+#autocomplétion
+@router.get("/search", response_model=list[schemas.Student])
+def search_students(
+    q: str = Query("", description="Fragment de nom, prénom ou email"),
+    db: Session = Depends(get_db),
+):
+    if not q:
+        # on limite à 20 premiers si q vide
+        return (
+            db.query(models.Student)
+            .order_by(models.Student.last_name)
+            .limit(20)
+            .all()
+        )
+
+    like = f"%{q}%"
+    return (
+        db.query(models.Student)
+        .filter(
+            or_(
+                models.Student.first_name.ilike(like),
+                models.Student.last_name.ilike(like),
+                models.Student.email.ilike(like),
+            )
+        )
+        .order_by(models.Student.last_name)
+        .limit(20)
+        .all()
+    )
+
+
