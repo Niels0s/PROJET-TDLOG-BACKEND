@@ -1,10 +1,13 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from .routers import auth, events, tickets, scan, admin, students
 from .db import Base, engine
-from fastapi.middleware.cors import CORSMiddleware
+from .initial_superadmin import ensure_initial_superadmin
 
 # Création des tables au démarrage (simple pour dev)
 Base.metadata.create_all(bind=engine)
+ensure_initial_superadmin()
 
 app = FastAPI(title="TD-LOG API", version="0.1.0")
 
