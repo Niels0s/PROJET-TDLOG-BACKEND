@@ -60,7 +60,7 @@ class TicketsBulkCreate(BaseModel):
 class TicketOut(BaseModel):
     id: int
     event_id: int
-    user_email: EmailStr
+    user_email: Optional[str] = None
     user_name: str
     qr_code_token: str
     status: str
@@ -76,7 +76,7 @@ class ScanRequest(BaseModel):
 class ScanResult(BaseModel):
     valid: bool          # True si le ticket est accepté
     reason: Optional[str] = None  # ex: "ticket_not_found", "already_scanned"
-    user_email: Optional[EmailStr] = None
+    user_email: Optional[str] = None
     user_name: Optional[str] = None
     event_id: Optional[int] = None
     status: Optional[str] = None   # UNUSED / SCANNED / CANCELED etc.
@@ -129,6 +129,8 @@ class ParticipantOut(ParticipantBase):
     id: int
     event_id: int
     qr_code: str
+    status: Optional[str] = None
+    scanned_at: Optional[datetime] = None
 
     class Config:
         orm_mode = True

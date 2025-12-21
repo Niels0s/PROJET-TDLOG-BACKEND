@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import secrets
+from typing import Dict, Optional
 
 from app.db import get_db
 from app import models, schemas
@@ -34,6 +35,24 @@ def _generate_qr_code() -> str:
     return secrets.token_urlsafe(16)
 
 
+def _participant_to_out(
+    participant: models.Participant,
+    ticket: Optional[models.Ticket],
+) -> schemas.ParticipantOut:
+    return schemas.ParticipantOut(
+        id=participant.id,
+        event_id=participant.event_id,
+        first_name=participant.first_name,
+        last_name=participant.last_name,
+        promo=participant.promo,
+        email=participant.email,
+        tarif=participant.tarif,
+        qr_code=participant.qr_code,
+        status=ticket.status if ticket else None,
+        scanned_at=ticket.scanned_at if ticket else None,
+    )
+
+
 @router.get("/", response_model=list[schemas.ParticipantOut])
 def list_participants(
     event_id: int,
@@ -41,12 +60,26 @@ def list_participants(
     current_user: models.User = Depends(get_current_user),
 ):
     _get_event_or_404(event_id, db)
-    return (
+    participants = (
         db.query(models.Participant)
         .filter(models.Participant.event_id == event_id)
         .order_by(models.Participant.last_name)
         .all()
     )
+    qr_codes = [p.qr_code for p in participants]
+    tickets_by_qr: Dict[str, models.Ticket] = {}
+    if qr_codes:
+        tickets = (
+            db.query(models.Ticket)
+            .filter(models.Ticket.qr_code_token.in_(qr_codes))
+            .all()
+        )
+        tickets_by_qr = {t.qr_code_token: t for t in tickets}
+
+    return [
+        _participant_to_out(p, tickets_by_qr.get(p.qr_code))
+        for p in participants
+    ]
 
 
 @router.post("/", response_model=schemas.ParticipantOut, status_code=status.HTTP_201_CREATED)
@@ -73,15 +106,16 @@ def create_participant(
 
     ticket = models.Ticket(
         event_id=event_id,
-        user_email=participant.email or "",
+        user_email=participant.email,  # None si non fourni
         user_name=f"{participant.first_name} {participant.last_name}".strip(),
         qr_code_token=participant.qr_code,
         status="UNUSED",
     )
     db.add(ticket)
     db.commit()
+    db.refresh(ticket)
 
-    return participant
+    return _participant_to_out(participant, ticket)
 
 
 @router.put("/{participant_id}", response_model=schemas.ParticipantOut)
@@ -107,11 +141,11 @@ def update_participant(
         .first()
     )
     if ticket:
-        ticket.user_email = participant.email or ""
+        ticket.user_email = participant.email  # None si non fourni
         ticket.user_name = f"{participant.first_name} {participant.last_name}".strip()
         db.commit()
 
-    return participant
+    return _participant_to_out(participant, ticket)
 
 
 @router.delete("/{participant_id}", status_code=status.HTTP_204_NO_CONTENT)
