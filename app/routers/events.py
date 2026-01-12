@@ -51,6 +51,33 @@ def get_event(event_id: int, db: Session = Depends(get_db)):
     return event
 
 
+@router.put("/{event_id}", response_model=schemas.EventOut)
+def update_event(
+    event_id: int,
+    event_in: schemas.EventCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    event = db.query(models.Event).filter(models.Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event non trouvé")
+
+    if event.created_by_id != current_user.id and not current_user.is_superadmin:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    event.name = event_in.name
+    event.description = event_in.description
+    event.date = event_in.date
+    event.location = event_in.location
+    # optional email_template field
+    if hasattr(event_in, 'email_template'):
+        event.email_template = getattr(event_in, 'email_template', None)
+
+    db.commit()
+    db.refresh(event)
+    return event
+
+
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_event(
     event_id: int,
